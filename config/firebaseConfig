@@ -1,10 +1,12 @@
 require('dotenv').config({ path: require('path').resolve(__dirname, '../.env') });
+const { encrypt, decrypt } = require('../utils/encryption');
+const fs = require('fs');
 const admin = require('firebase-admin');
 
-const SERVICE_ACCOUNT_KEY = JSON.parse(process.env.SERVICE_ACCOUNT_KEY) ;
+const decryptedCredentials = JSON.parse(decrypt(process.env.SERVICE_ACCOUNT_KEY));
 
 admin.initializeApp({
-  credential: admin.credential.cert(SERVICE_ACCOUNT_KEY),
+  credential: admin.credential.cert(decryptedCredentials),
 });
 
 const db = admin.firestore(); // Firestore instance
