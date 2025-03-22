@@ -1,0 +1,160 @@
+const { db } = require('../config/firebaseConfig')
+const { _makeIds: makeIds } = require('../controllers/uuidController')
+
+const databaseName = 'pfm_100_mobile_platform'
+const User = {
+  async allDocs() {
+    const snapshot = await db.collection(databaseName).get();
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  },
+
+  async allDocById(id) {
+    const doc = await db.collection(databaseName).doc(id).get();
+    return doc.exists ? { id: doc.id, ...doc.data() } : null;
+  },
+
+  async save(record) {
+    let recId;
+    if (record['id']) {
+      recId = record['type'] + "_2_" + record['id'];
+      record['id'] = recId;
+    } else {
+      recId = record['type'] + "_2_" + await makeIds(1);
+      record['id'] = recId;
+    }
+    record['rev'] = "0_" + await makeIds(1);
+    record['createdon'] = Date.now()
+    record['modifiedon'] = Date.now()
+    const docRef = await db.collection(databaseName).doc(recId);
+    await docRef.set(record);
+    return { id: docRef.id, ...record };
+  },
+
+  async update(id, record) {
+    record['modifiedon'] = Date.now()
+    record['rev'] = String((Number(record['rev'].split("_")[0]) + 1) + "_" + await makeIds(1));
+    await db.collection(databaseName).doc(id).update(record);
+    return { id, ...record };
+  },
+
+  async delete(id) {
+    await db.collection(databaseName).doc(id).delete();
+    return { message: "User deleted successfully" };
+  },
+
+  async searchDoc(conditions) {
+    const andConditions = conditions.$and || [];
+    const orConditions = conditions.$or || [];
+    const limit = conditions.$limit || null;
+    const sort = conditions.$sort || null;
+
+    let query = db.collection(databaseName);
+
+    // Handle AND conditions (excluding `!=` and `not-in` for manual filtering)
+    const manualFilters = [];
+    andConditions.forEach(({ field, operator, value }) => {
+      if (operator === '!=' || operator === 'not-in') {
+        manualFilters.push({ field, operator, value });
+      } else {
+        query = query.where(field, operator, value);
+      }
+    });
+
+    // Handle OR conditions (Multiple queries merged)
+    if (orConditions.length) {
+      const orQueries = await orConditions.map(({ field, operator, value }) =>
+        db.collection(databaseName).where(field, operator, value).get()
+      );
+
+      const snapshots = await Promise.all(orQueries);
+
+      const orResults = [];
+      snapshots.forEach(snapshot => {
+        snapshot.forEach(doc => {
+          if (!orResults.some(res => res.id === doc.id)) {
+            orResults.push({ id: doc.id, ...doc.data() });
+          }
+        });
+      });
+
+      // Combine AND + OR Results
+      const andResults = await query.get();
+      let combinedResults = [...orResults];
+
+      andResults.forEach(doc => {
+        if (!combinedResults.some(res => res.id === doc.id)) {
+          combinedResults.push({ id: doc.id, ...doc.data() });
+        }
+      });
+
+      // Manual Filtering for `!=` and `not-in` conditions
+      if (manualFilters.length) {
+        combinedResults = combinedResults.filter(doc =>
+          manualFilters.every(({ field, operator, value }) => {
+            if (operator === '!=') return doc[field] !== value;
+            if (operator === 'not-in') return !value.includes(doc[field]);
+            return true;
+          })
+        );
+      }
+
+      return combinedResults;
+    }
+
+    // If no OR conditions, return only AND results
+    const snapshot = await query.get();
+
+    if (snapshot.empty) {
+      return [];
+    }
+
+    let finalResults = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+    // Manual Filtering for `!=` and `not-in` conditions (if no OR conditions)
+    if (manualFilters.length) {
+      finalResults = finalResults.filter(doc =>
+        manualFilters.every(({ field, operator, value }) => {
+          if (operator === '!=') return doc[field] !== value;
+          if (operator === 'not-in') return !value.includes(doc[field]);
+          return true;
+        })
+      );
+    }
+
+    if (sort) {
+      const { field, direction } = sort;
+
+      finalResults.sort((a, b) => {
+        const valueA = a[field] || '';
+        const valueB = b[field] || '';
+
+        if (typeof valueA === 'string' && typeof valueB === 'string') {
+          if (direction === 'asc') {
+            return valueA.localeCompare(valueB);
+          } else if (direction === 'desc') {
+            return valueB.localeCompare(valueA);
+          }
+        }
+
+        if (direction === 'asc') {
+          return valueA - valueB;
+        } else if (direction === 'desc') {
+          return valueB - valueA;
+        }
+
+        return 0; // Default case if direction is neither 'asc' nor 'desc'
+      });
+    }
+
+    // Handle Limit
+    if (limit) {
+      finalResults = finalResults.slice(0, limit);
+    }
+
+    return finalResults;
+  }
+
+
+};
+
+module.exports = User;
