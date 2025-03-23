@@ -47,6 +47,8 @@ const User = {
     const orConditions = conditions.$or || [];
     const limit = conditions.$limit || null;
     const sort = conditions.$sort || null;
+    const groupByField = conditions.$groupByField || [];
+    const includeFields = conditions.$includeFields || false;
 
     let query = db.collection(databaseName);
 
@@ -151,7 +153,35 @@ const User = {
       finalResults = finalResults.slice(0, limit);
     }
 
-    return finalResults;
+    if (groupByField.length > 0) {
+      let tempFinalResult = {};
+
+      for (const element of finalResults) {
+        const groupValue = element[groupByField];
+
+        if (!tempFinalResult[groupValue]) {
+          tempFinalResult[groupValue] = {
+            count: 0,
+            docs: [],
+          };
+        }
+
+        tempFinalResult[groupValue].count += 1;
+        if (includeFields) {
+          tempFinalResult[groupValue].docs.push(element);
+        }
+      }
+
+      return tempFinalResult;
+    }
+
+
+    return {
+      rows: finalResults.length,
+      docs: includeFields
+        ? finalResults
+        : finalResults.map(({ id, rev }) => ({ id, rev }))
+    };
   }
 
 
