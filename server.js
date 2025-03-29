@@ -4,6 +4,7 @@ const bodyParser = require('body-parser');
 const userRoutes = require('./routes/userRoutes');
 const designerDbRoute = require('./routes/designerDbRoutes');
 const uuidRoutes = require('./routes/uuidRoutes');
+const middlewareRoutes = require('./inputs/browserapp/routes/middlewareRoutes');
 const MOBILE_PLATFORM_LISTENER = require('./listeners/pfm_100_mobile_platform')
 require('dotenv').config();
 
@@ -28,6 +29,9 @@ app.use('/pfm_100_formula', userRoutes);
 app.use('/pfm_100_meta_info', userRoutes);
 app.use('/pfm_100_designer', designerDbRoute);
 app.use('/getUUID', uuidRoutes);
+
+//middleware Reoutes
+app.use('/middleware', middlewareRoutes)
 
 // starting listeners
 console.log(`\x1b[33m\x1b[4mAvailable Listeners\x1b[0m`);
