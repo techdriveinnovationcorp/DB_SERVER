@@ -31,11 +31,13 @@ const middlewareController = {
       const [listenerName] = await makeIds(1);
 
       ListenerService.subscribeToListener(listenerName, (data) => {
+        
+        const dataResp = `streamStart: ${simpleCrypto.encrypt(JSON.stringify(data))}streamEnd`;
        
         if (data && data['status'] === 'inprogress') {
-          const dataResp = `streamStart: ${simpleCrypto.encrypt(JSON.stringify(data))}streamEnd`;
           res.write(dataResp);
         } else if (data && data['status'] === 'completed') {
+          res.write(dataResp);
           res.end();
         }
       });
