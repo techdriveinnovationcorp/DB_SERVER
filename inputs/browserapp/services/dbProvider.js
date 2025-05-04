@@ -62,48 +62,56 @@ const dbProvider = {
     listenerService.notifyListeners(listenerName, {records: [], status: 'completed'});
   },
 
-  async listFetch({objectHierarchy}, listenerName) {
-
-    const getChildByType = (children, type) => _.filter(children, { objectType: type });
+  async listFetch({ objectHierarchy }, listenerName) {
+    const groupChildrenByType = (children) => _.groupBy(children, 'objectType');
 
     const fetchOneToOneChildren = async (oneToOneArray, parentRec) => {
-      return Promise.all(oneToOneArray.map(async ({ objectName, fieldName, childObject, rootPath }) => {
-        const refId = parentRec?.id?.split('_2_')[1];
-        if (!refId) return;
+      const refId = parentRec?.id?.split('_2_')[1];
+      if (!refId || !oneToOneArray.length) return [];
 
-        const query = {
-          $and: [
-            { field: 'type', operator: '==', value: objectName },
-            { field: fieldName, operator: '==', value: refId }
-          ],
-          $includeFields: true,
-        };
-
-        const res = await User.searchDoc(query);
-        const childRec = res?.docs?.[0];
-        if (childRec) {
-          listenerService.notifyListeners(listenerName, { records: childRec, rootPath: rootPath, status: 'inprogress' });
-          return handleResponse(childObject, childRec);
-        }
+      const queries = oneToOneArray.map(({ objectName, fieldName }) => ({
+        $and: [
+          { field: 'type', operator: '==', value: objectName },
+          { field: fieldName, operator: '==', value: refId }
+        ],
+        $includeFields: true,
       }));
+
+      const promises = queries.map((query, i) => User.searchDoc(query)
+        .then(res => {
+          const childRec = res?.docs?.[0];
+          if (childRec) {
+            const child = oneToOneArray[i];
+            listenerService.notifyListeners(listenerName, { records: childRec, rootPath: child.rootPath, status: 'inprogress' });
+            return handleResponse(child.childObject, childRec);
+          }
+        })
+      );
+
+      return Promise.all(promises);
     };
 
     const fetchHeaderChildren = async (headerArray, parentRec) => {
-      return Promise.all(headerArray.map(async ({ objectName, fieldName, childObject }) => {
+      if (!headerArray.length) return [];
+
+      const promises = headerArray.map(async ({ objectName, fieldName, childObject }) => {
         const headerId = `${objectName}_2_${parentRec[fieldName]}`;
         const res = await User.allDocById(headerId);
         if (res?.id) {
           listenerService.notifyListeners(listenerName, { records: res, rootPath: childObject['rootPath'], status: 'inprogress' });
           return handleResponse(childObject, res);
         }
-      }));
+      });
+
+      return Promise.all(promises);
     };
 
     const handleResponse = async (childObject, parentRec) => {
-      if (!childObject?.length) return;
+      if (!Array.isArray(childObject) || childObject.length === 0) return;
 
-      const oneToOneArray = getChildByType(childObject, 'one_to_one');
-      const headerArray = getChildByType(childObject, 'header');
+      const groupedChildren = groupChildrenByType(childObject);
+      const oneToOneArray = groupedChildren['one_to_one'] || [];
+      const headerArray = groupedChildren['header'] || [];
 
       await Promise.all([
         fetchOneToOneChildren(oneToOneArray, parentRec),
@@ -115,20 +123,27 @@ const dbProvider = {
       $and: [
         { field: 'type', operator: '==', value: objectHierarchy['objectName'] }
       ],
-      $sort: { "field": "createdon", "direction": "asc" },
+      $sort: { field: 'createdon', direction: 'asc' },
       $includeFields: objectHierarchy['includeFields'],
     };
 
     const primaryRes = await User.searchDoc(query);
-    if (primaryRes?.['docs'] && primaryRes['docs'].length > 0) {
-      for (const element of primaryRes['docs']) {
-        listenerService.notifyListeners(listenerName, { records: element, rootPath: objectHierarchy['rootPath'], status: 'inprogress' });
-        await handleResponse(objectHierarchy.childObject, element);
-      }
-    }
+    const docs = primaryRes?.docs || [];
 
-    listenerService.notifyListeners(listenerName, {records: {}, status: 'completed'});
+    await Promise.all(
+      docs.map(async (element) => {
+        listenerService.notifyListeners(listenerName, {
+          records: element,
+          rootPath: objectHierarchy['rootPath'],
+          status: 'inprogress'
+        });
+        return handleResponse(objectHierarchy.childObject, element);
+      })
+    );
+
+    listenerService.notifyListeners(listenerName, { records: {}, status: 'completed' });
   }
+  
 };
 
 module.exports = dbProvider;
