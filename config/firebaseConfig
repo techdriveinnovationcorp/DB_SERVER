@@ -1,9 +1,9 @@
 require('dotenv').config({ path: require('path').resolve(__dirname, '../.env') });
 const admin = require('firebase-admin');
-
+const simpleCrypto = require('../utils/cryptoUtils');
 
 admin.initializeApp({
-  credential: admin.credential.cert(JSON.parse(process.env.SERVICE_ACCOUNT_KEY)),
+  credential: admin.credential.cert(simpleCrypto.decrypt(process.env.SERVICE_ACCOUNT_KEY)),
 });
 
 const db = admin.firestore(); // Firestore instance

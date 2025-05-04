@@ -27,14 +27,14 @@ const User = {
     record['modifiedon'] = Date.now()
     const docRef = await db.collection(databaseName).doc(recId);
     await docRef.set(record);
-    return { id: docRef.id, ...record };
+    return { status: "SUCCESS", id: docRef.id, rev: record['rev'] };
   },
 
   async update(id, record) {
     record['modifiedon'] = Date.now()
     record['rev'] = String((Number(record['rev'].split("_")[0]) + 1) + "_" + await makeIds(1));
     await db.collection(databaseName).doc(id).update(record);
-    return { id, ...record };
+    return { id, rev: record['rev'] };
   },
 
   async delete(id) {
@@ -182,9 +182,33 @@ const User = {
         ? finalResults
         : finalResults.map(({ id, rev }) => ({ id, rev }))
     };
+  },
+
+  async getCountBasedOnType(type) {
+    const query = db.collection(databaseName).where("type", "==", type);
+    const snapshot = await query.count().get();
+    return snapshot.data().count + 1;
+  },
+
+  async gridStreamFetchWithHierarchy(params) {
+    try {
+      const headers = {
+          "Content-Type": "text/plain",
+          "Transfer-Encoding": "chunked"
+      };
+      res.writeHead(200, headers);
+      const body = req.body;
+      res.write(`data: ${JSON.stringify({ body  })}\n\n`);
+
+
+      req.on('close', () => console.log("closed"));
+  } catch (error) {
+      console.error("Error in initiateFetch:", error)
+      res.send({
+          "error": error
+      })
   }
-
-
+  }
 };
 
 module.exports = User;
